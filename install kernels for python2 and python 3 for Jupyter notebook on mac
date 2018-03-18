@@ -1,0 +1,16 @@
+found that some sample code can't run on Jupyter notebook because it is not compatible with Python 3.6 and thus need to 
+install Python 2.7 and create two kernels to run the code.
+Ipython 6 doesn't support Python 3, so need to download and install Ipython 5 
+  pip install Ipython==5.0 --user
+create kernel ipykernel_py2 for python 2
+  conda create -n ipykernel_py2 python=2 ipykernel
+activate it 
+source activate ipykernel_py2
+install pyspark
+  pip install pyspark
+link pyspark to Jupyter notebook
+ export PYSPARK_DRIVER_PYTHON=jupyter
+ export PYSPARK_DRIVER_PYTHON_OPTS='notebook'
+ 
+ 
+ environment location: /anaconda3/envs/ipykernel_py2
