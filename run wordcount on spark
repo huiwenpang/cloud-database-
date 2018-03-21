@@ -1,0 +1,27 @@
+from __future__ import print_function
+import sys
+
+from pyspark import SparkContext, SparkConf
+
+if __name__ =="__main__":
+	
+	if len(sys.argv) != 2:
+		print("Usage: full_path/wordcount.py <file>", file=sys.stderr)
+		exit(-1)
+
+	conf = SparkConf().setAppName("WordCount").setMaster("local[8]")
+	sc=SparkContext(conf=conf)
+	lines=sc.textFile(sys.argv[1])
+	counts=lines.flatMap(lambda x: x.split(' '))\
+				.map(lambda x: (x, 1))\
+				.reduceByKey(lambda x,y: x+y)
+
+	output=counts.collect()
+	for (word, count) in output:
+		print(word.encode('utf-8'),count)
+
+	sc.stop()
+  
+  ## asumme the above program and a text file named text.txt are both in the some directory
+  ##cd to the directory that contains spark, enter commandline: 
+  ./bin/spark-submit --master local[8] /Users/Amanda/Desktop/Spark/WordCount.py /Users/Amanda/Desktop/Spark/text.txt
