@@ -1,0 +1,136 @@
+1)	from mrjob.job import MRJob
+from mrjob.step import MRStep
+from itertools import combinations
+import numpy
+from scipy import spatial
+
+
+class Movie(MRJob):
+
+    def steps(self):
+        return [MRStep(mapper=self.mapper_get_names,
+                       reducer=self.reducer_get_names),
+                MRStep(reducer=self.reducer_create_pairs),
+                MRStep(reducer=self.reducer_compute_similarities),
+                MRStep(reducer=self.reducer_output),
+                MRStep(reducer=self.reducer_print_results)]
+                
+
+
+    def configure_args(self):
+        super(Movie, self).configure_args()
+        self.add_passthru_arg(
+            '-m', '--moviename', action='append', type=str, default=[], help='movie name to search.')
+        self.add_passthru_arg(
+            '-l', '--lowerbound', action='store', type=float, default=.4, help='lower bound of similarity.')
+        self.add_passthru_arg(
+            '-p', '--minpairs', action='store', type=int, default=3, help='mininum rating pairs.')
+        self.add_passthru_arg(
+            '-k', '--topitems', action='store', type=int, default=25, help='number of items on the top matches.')
+
+    def mapper_get_names(self, _, line):
+
+        #validate input
+        if len(self.options.moviename) == 0:
+            raise Exception('Must specify at least one movie name.')
+
+        #print (self.options.moviename, " ", self.options.lowerbound, " ", self.options.minpairs, " ", self.options.topitems)
+
+        #extract data
+        m = line.split(',')
+        #if the file contains only 3 columns, get movie ID and movie title
+        if len(m) == 3:
+            movie_id=m[0]
+            movie_title=m[1]
+            yield movie_id, (0, movie_title, 0)
+
+
+            # if the file contains 4 columns, get movie ID, user ID, and ratings
+        if len(m) == 4:
+            user_id=m[0]
+            movie_id = m[1]
+            rating=m[2]
+            yield movie_id, (user_id, 0, rating)
+
+    def reducer_get_names(self, key, values):
+       # movie_rating=[]
+        movie_name = ''
+        userId = ''
+        rating = 0.0
+
+        for value in values:
+            # find movie names
+            if value[0] == 0:
+                a = list(value)
+                movie_name = a[1]
+            # find user ID and ratings for the movie
+            else:
+                b = list(value)
+                userId = b[0]
+                rating = b[2]
+          # movie_rating.append((movie_name, rating))
+            yield userId, (movie_name, float(rating))
+
+    def reducer_create_pairs(self, key, values):
+        for mov_rat1, mov_rat2 in combinations(values, 2):
+            movie1 = mov_rat1[0]
+            rating1 = mov_rat1[1]
+
+            movie2 = mov_rat2[0]
+            rating2 = mov_rat2[1]
+            if movie1 < movie2:
+                # print("movie1:",movie1,", Movie2:",movie2)
+                yield (movie1, movie2), (rating1, rating2)
+            else:
+                #  print("movie2:", movie2, ", Movie1:", movie1)
+                yield (movie2, movie1), (rating2, rating1)
+
+
+    def reducer_compute_similarities(self, key, values):
+        r1 = []
+        r2 = []
+
+        for rating1, rating2 in values:
+            #print (rating1, rating2)
+            r1.append(rating1)
+            r2.append(rating2)
+            #print (r1)
+        if len(r1)>3:
+            # statistical correlation
+            cor = numpy.corrcoef(r1, r2)[0, 1]
+            # cosine correalation
+            cos_cor = 1 - spatial.distance.cosine(r1, r2)
+            # combine two metrics
+            avg_cor = 0.5 * (cor + cos_cor)
+            #numbr of pairs
+            numOfPairs = len(r1)
+            #filtered by set criteria from input
+            if (numOfPairs >= self.options.minpairs and avg_cor >= self.options.lowerbound):
+                yield key, (float("{0:.4f}".format(avg_cor)), float("{0:.4f}".format(cor)), float("{0:.4f}".format(cos_cor)), numOfPairs)
+
+    def reducer_output(self, key, values):
+
+        #filter corelaltions by movie title
+        for title in self.options.moviename:
+            if title in key:
+                for avg_cor, cor, cos_or, numOfpair in values:
+                    if key[0] == title:
+                        yield title, (key[1], avg_cor, cor, cos_or, numOfpair)
+                    elif key[1] == title:
+                        yield title, (key[0], avg_cor, cor, cos_or, numOfpair)
+
+    def reducer_print_results(self, key, values):
+            #sort results by reverse order
+            m_list=[]
+            for value in values:
+                m_list.append(value)
+                m_list.sort(key=lambda x:x[1], reverse=True)
+            #select the top k items
+            k=self.options.topitems
+
+            for value in m_list[:k]:
+                    yield key, value
+
+
+if __name__ == "__main__":
+    Movie.run()
